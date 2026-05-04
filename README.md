@@ -1,5 +1,6 @@
 # OS-final-project
-Env Setup:
+Enviroment Setup:
+
 mkdir SMBS
 
 cd SMBS
