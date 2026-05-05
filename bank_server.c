@@ -5,12 +5,15 @@
 #include <fcntl.h>
 #include <sys/stat.h>
 #include <errno.h>
+#include <pthread.h>
 
 #include "bank_common.h"
 
 #define DATA_DIR "data"
 #define ACCOUNT_FILE_TEMPLATE DATA_DIR "/account_%d.txt"
 #define ACCOUNT_PATH_SIZE 128
+
+static pthread_mutex_t account_mutex = PTHREAD_MUTEX_INITIALIZER;
 
 static int ensure_data_directory(void)
 {
@@ -100,13 +103,18 @@ static void handle_balance_check(const BankRequest *request, BankResponse *respo
 {
     double balance;
 
+    pthread_mutex_lock(&account_mutex);
+
     if (!read_balance(request->from_account, &balance))
     {
+        pthread_mutex_unlock(&account_mutex);
         response->success = 0;
         snprintf(response->message, MAX_MESSAGE,
                  "Could not read balance for account %d.", request->from_account);
         return;
     }
+
+    pthread_mutex_unlock(&account_mutex);
 
     response->success = 1;
     response->balance = balance;
@@ -126,8 +134,11 @@ static void handle_deposit(const BankRequest *request, BankResponse *response)
         return;
     }
 
+    pthread_mutex_lock(&account_mutex);
+
     if (!read_balance(request->from_account, &balance))
     {
+        pthread_mutex_unlock(&account_mutex);
         response->success = 0;
         snprintf(response->message, MAX_MESSAGE,
                  "Could not read balance for account %d.", request->from_account);
@@ -138,11 +149,14 @@ static void handle_deposit(const BankRequest *request, BankResponse *response)
 
     if (!write_balance(request->from_account, balance))
     {
+        pthread_mutex_unlock(&account_mutex);
         response->success = 0;
         snprintf(response->message, MAX_MESSAGE,
                  "Could not save balance for account %d.", request->from_account);
         return;
     }
+
+    pthread_mutex_unlock(&account_mutex);
 
     response->success = 1;
     response->balance = balance;
@@ -163,8 +177,11 @@ static void handle_withdraw(const BankRequest *request, BankResponse *response)
         return;
     }
 
+    pthread_mutex_lock(&account_mutex);
+
     if (!read_balance(request->from_account, &balance))
     {
+        pthread_mutex_unlock(&account_mutex);
         response->success = 0;
         snprintf(response->message, MAX_MESSAGE,
                  "Could not read balance for account %d.", request->from_account);
@@ -173,6 +190,7 @@ static void handle_withdraw(const BankRequest *request, BankResponse *response)
 
     if (balance < request->amount)
     {
+        pthread_mutex_unlock(&account_mutex);
         response->success = 0;
         response->balance = balance;
         snprintf(response->message, MAX_MESSAGE,
@@ -185,11 +203,14 @@ static void handle_withdraw(const BankRequest *request, BankResponse *response)
 
     if (!write_balance(request->from_account, balance))
     {
+        pthread_mutex_unlock(&account_mutex);
         response->success = 0;
         snprintf(response->message, MAX_MESSAGE,
                  "Could not save balance for account %d.", request->from_account);
         return;
     }
+
+    pthread_mutex_unlock(&account_mutex);
 
     response->success = 1;
     response->balance = balance;
@@ -219,9 +240,12 @@ static void handle_transfer(const BankRequest *request, BankResponse *response)
         return;
     }
 
+    pthread_mutex_lock(&account_mutex);
+
     if (!read_balance(request->from_account, &from_balance) ||
         !read_balance(request->to_account, &to_balance))
     {
+        pthread_mutex_unlock(&account_mutex);
         response->success = 0;
         snprintf(response->message, MAX_MESSAGE,
                  "Could not read one of the account balances.");
@@ -230,6 +254,7 @@ static void handle_transfer(const BankRequest *request, BankResponse *response)
 
     if (from_balance < request->amount)
     {
+        pthread_mutex_unlock(&account_mutex);
         response->success = 0;
         response->balance = from_balance;
         snprintf(response->message, MAX_MESSAGE,
@@ -244,11 +269,14 @@ static void handle_transfer(const BankRequest *request, BankResponse *response)
     if (!write_balance(request->from_account, from_balance) ||
         !write_balance(request->to_account, to_balance))
     {
+        pthread_mutex_unlock(&account_mutex);
         response->success = 0;
         snprintf(response->message, MAX_MESSAGE,
                  "Could not save transfer balances.");
         return;
     }
+
+    pthread_mutex_unlock(&account_mutex);
 
     response->success = 1;
     response->balance = from_balance;
@@ -288,6 +316,32 @@ static void build_response(const BankRequest *request, BankResponse *response)
     }
 }
 
+
+static void *client_thread(void *arg)
+{
+    BankRequest request = *(BankRequest *)arg;
+    free(arg);
+
+    BankResponse response;
+    build_response(&request, &response);
+
+    int private_fd = open(request.private_fifo, O_WRONLY);
+
+    if (private_fd == -1)
+    {
+        perror("Failed to open client private FIFO");
+        return NULL;
+    }
+
+    if (write(private_fd, &response, sizeof(BankResponse)) != sizeof(BankResponse))
+    {
+        perror("Failed to send response to client");
+    }
+
+    close(private_fd);
+    return NULL;
+}
+
 int main(void)
 {
     int public_fd;
@@ -319,8 +373,16 @@ int main(void)
             continue;
         }
 
-        while (read(public_fd, &request, sizeof(BankRequest)) > 0)
+        ssize_t bytes_read;
+
+        while ((bytes_read = read(public_fd, &request, sizeof(BankRequest))) > 0)
         {
+            if (bytes_read != sizeof(BankRequest))
+            {
+                fprintf(stderr, "Ignored incomplete request.\n");
+                continue;
+            }
+
             printf("\nReceived request from user: %s\n", request.username);
             printf("Operation: %s\n", request.operation);
             printf("From account: %d\n", request.from_account);
@@ -328,20 +390,26 @@ int main(void)
             printf("Amount: %.2f\n", request.amount);
             printf("Private FIFO: %s\n", request.private_fifo);
 
-            BankResponse response;
-            build_response(&request, &response);
+            BankRequest *thread_request = malloc(sizeof(BankRequest));
 
-            int private_fd = open(request.private_fifo, O_WRONLY);
+            if (thread_request == NULL)
+            {
+                perror("Failed to allocate request for client thread");
+                continue;
+            }
 
-            if (private_fd == -1)
+            *thread_request = request;
+
+            pthread_t thread_id;
+
+            if (pthread_create(&thread_id, NULL, client_thread, thread_request) != 0)
             {
-                perror("Failed to open client private FIFO");
+                perror("Failed to create client thread");
+                free(thread_request);
+                continue;
             }
-            else
-            {
-                write(private_fd, &response, sizeof(BankResponse));
-                close(private_fd);
-            }
+
+            pthread_detach(thread_id);
         }
 
         close(public_fd);

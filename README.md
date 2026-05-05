@@ -11,13 +11,13 @@ touch bank_common.h bank_server.c bank_client.c Makefile
 
 # Steps to follow:
 
-Step 1: Server and client talk through FIFOs. Done
+~~Step 1: Server and client talk through FIFOs.~~ Done
 
-Step 2: Client can send operation requests. Done
+~~Step 2: Client can send operation requests.~~ Done
 
-Step 3: Server can read/write plain account balances. Done
+~~Step 3: Server can read/write plain account balances.~~ Done
 
-Step 4: Add mutexes.
+~~Step 4: Add mutexes.~~ Done
 
 Step 5: Add transfers with ordered locking.
 
