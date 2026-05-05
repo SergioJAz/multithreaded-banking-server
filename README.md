@@ -24,5 +24,3 @@ Step 5: Add transfers with ordered locking.
 Step 6: Add authentication.
 
 Step 7: Add encryption.
-
-Step 8: Add final demo script and report.
