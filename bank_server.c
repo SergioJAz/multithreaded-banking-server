@@ -1007,12 +1007,6 @@ static void build_response(const BankRequest *request, BankResponse *response)
 
     authenticated_request = *request;
 
-    /*
-     * After login, the server decides which account the user owns.
-     * The client no longer sends its own account number for balance, deposit,
-     * withdraw, or transfer-from. This prevents users from pretending to be
-     * another account.
-     */
     authenticated_request.from_account = owned_account;
 
     if (!check_account_ownership(&authenticated_request, owned_account, response))
