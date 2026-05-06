@@ -91,7 +91,7 @@ static void read_password(char *password, int max_len)
         {
             if (i > 0)
             {
-                i -= 1;
+                i--;
                 printf("\b \b");
                 fflush(stdout);
             }
@@ -99,8 +99,7 @@ static void read_password(char *password, int max_len)
         else
         {
             password[i] = ch;
-            i += 1;
-
+            i++;
             printf("*");
             fflush(stdout);
         }
@@ -212,16 +211,10 @@ int main()
         if (choice == 1)
         {
             strncpy(request.operation, "BalanceCheck", MAX_OPERATION - 1);
-
-            printf("Your account number: ");
-            request.from_account = read_int_choice();
         }
         else if (choice == 2)
         {
             strncpy(request.operation, "Deposit", MAX_OPERATION - 1);
-
-            printf("Your account number: ");
-            request.from_account = read_int_choice();
 
             printf("Amount to deposit: ");
             request.amount = read_amount();
@@ -230,18 +223,12 @@ int main()
         {
             strncpy(request.operation, "Withdraw", MAX_OPERATION - 1);
 
-            printf("Your account number: ");
-            request.from_account = read_int_choice();
-
             printf("Amount to withdraw: ");
             request.amount = read_amount();
         }
         else if (choice == 4)
         {
             strncpy(request.operation, "Transfer", MAX_OPERATION - 1);
-
-            printf("Your account number to transfer from: ");
-            request.from_account = read_int_choice();
 
             printf("To account number: ");
             request.to_account = read_int_choice();

@@ -987,6 +987,7 @@ static void handle_transfer(const BankRequest *request, BankResponse *response)
 
 static void build_response(const BankRequest *request, BankResponse *response)
 {
+    BankRequest authenticated_request;
     int owned_account = -1;
 
     response->success = 0;
@@ -1004,32 +1005,42 @@ static void build_response(const BankRequest *request, BankResponse *response)
         return;
     }
 
-    if (!check_account_ownership(request, owned_account, response))
+    authenticated_request = *request;
+
+    /*
+     * After login, the server decides which account the user owns.
+     * The client no longer sends its own account number for balance, deposit,
+     * withdraw, or transfer-from. This prevents users from pretending to be
+     * another account.
+     */
+    authenticated_request.from_account = owned_account;
+
+    if (!check_account_ownership(&authenticated_request, owned_account, response))
     {
         return;
     }
 
-    if (strcmp(request->operation, "BalanceCheck") == 0)
+    if (strcmp(authenticated_request.operation, "BalanceCheck") == 0)
     {
-        handle_balance_check(request, response);
+        handle_balance_check(&authenticated_request, response);
     }
-    else if (strcmp(request->operation, "Deposit") == 0)
+    else if (strcmp(authenticated_request.operation, "Deposit") == 0)
     {
-        handle_deposit(request, response);
+        handle_deposit(&authenticated_request, response);
     }
-    else if (strcmp(request->operation, "Withdraw") == 0)
+    else if (strcmp(authenticated_request.operation, "Withdraw") == 0)
     {
-        handle_withdraw(request, response);
+        handle_withdraw(&authenticated_request, response);
     }
-    else if (strcmp(request->operation, "Transfer") == 0)
+    else if (strcmp(authenticated_request.operation, "Transfer") == 0)
     {
-        handle_transfer(request, response);
+        handle_transfer(&authenticated_request, response);
     }
     else
     {
         response->success = 0;
         snprintf(response->message, MAX_MESSAGE,
-                 "Invalid operation: %s.", request->operation);
+                 "Invalid operation: %s.", authenticated_request.operation);
     }
 }
 
