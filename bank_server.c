@@ -323,29 +323,10 @@ static int ensure_users_auth_file(void)
         return 0;
     }
 
-    const char *users[][4] = {
-        {"sergio", "salt_sergio_01", "sergio123", "0"},
-        {"alice", "salt_alice_04", "alice123", "3"},
-        {"bob", "salt_bob_03", "bob123", "2"},
-        {"priyan123", "salt_priyan123_02", "priyan123", "1"}};
-
     fprintf(file, "# Format: username:salt:sha256(salt + password):account_id\n");
-
-    for (int i = 0; i < 4; i++)
-    {
-        char salted_password[MAX_PASSWORD + SALT_SIZE];
-        char hash[HASH_SIZE];
-
-        snprintf(salted_password, sizeof(salted_password), "%s%s", users[i][1], users[i][2]);
-        sha256_hex(salted_password, hash);
-        fprintf(file, "%s:%s:%s:%s\n", users[i][0], users[i][1], hash, users[i][3]);
-    }
-
     fclose(file);
 
-    printf("Created default users.auth file.\n");
-    printf("Default users: sergio/sergio123 account 0, priyan123/priyan123 account 1, bob/bob123 account 2, alice/alice123 account 3.\n");
-
+    printf("Created empty users.auth file. Register users with the client menu.\n");
     return 1;
 }
 
@@ -550,10 +531,50 @@ static void generate_salt(const char *username, int account_number, char *salt, 
     snprintf(salt, salt_size, "salt_%s_%02d", username, account_number + 1);
 }
 
-static int user_or_account_exists(const char *new_username, int new_account)
+static int username_exists(const char *new_username)
 {
     FILE *file = fopen(USERS_AUTH_FILE, "r");
     char line[AUTH_LINE_SIZE];
+
+    if (file == NULL)
+    {
+        return 0;
+    }
+
+    while (fgets(line, sizeof(line), file) != NULL)
+    {
+        char line_copy[AUTH_LINE_SIZE];
+        char *username;
+        char *save_ptr;
+
+        line[strcspn(line, "\r\n")] = '\0';
+
+        if (line[0] == '\0' || line[0] == '#')
+        {
+            continue;
+        }
+
+        strncpy(line_copy, line, sizeof(line_copy) - 1);
+        line_copy[sizeof(line_copy) - 1] = '\0';
+
+        username = strtok_r(line_copy, ":", &save_ptr);
+
+        if (username != NULL && strcmp(username, new_username) == 0)
+        {
+            fclose(file);
+            return 1;
+        }
+    }
+
+    fclose(file);
+    return 0;
+}
+
+static int get_next_account_id(void)
+{
+    FILE *file = fopen(USERS_AUTH_FILE, "r");
+    char line[AUTH_LINE_SIZE];
+    int highest_account = -1;
 
     if (file == NULL)
     {
@@ -568,6 +589,7 @@ static int user_or_account_exists(const char *new_username, int new_account)
         char *stored_hash;
         char *account_text;
         char *save_ptr;
+        int account_number;
 
         line[strcspn(line, "\r\n")] = '\0';
 
@@ -589,15 +611,17 @@ static int user_or_account_exists(const char *new_username, int new_account)
             continue;
         }
 
-        if (strcmp(username, new_username) == 0 || atoi(account_text) == new_account)
+        account_number = atoi(account_text);
+
+        if (account_number > highest_account)
         {
-            fclose(file);
-            return 1;
+            highest_account = account_number;
         }
     }
 
     fclose(file);
-    return 0;
+
+    return highest_account + 1;
 }
 
 static void handle_register_user(const BankRequest *request, BankResponse *response)
@@ -606,6 +630,7 @@ static void handle_register_user(const BankRequest *request, BankResponse *respo
     char salted_password[MAX_PASSWORD + SALT_SIZE];
     char hash[HASH_SIZE];
     FILE *file;
+    int new_account;
 
     if (request->username[0] == '\0' || request->password[0] == '\0')
     {
@@ -614,24 +639,27 @@ static void handle_register_user(const BankRequest *request, BankResponse *respo
         return;
     }
 
-    if (!valid_account_number(request->from_account))
-    {
-        response->success = 0;
-        snprintf(response->message, MAX_MESSAGE, "Registration failed. Invalid account number %d.", request->from_account);
-        return;
-    }
-
     pthread_mutex_lock(&users_auth_mutex);
 
-    if (user_or_account_exists(request->username, request->from_account))
+    if (username_exists(request->username))
     {
         pthread_mutex_unlock(&users_auth_mutex);
         response->success = 0;
-        snprintf(response->message, MAX_MESSAGE, "Registration failed. Username or account number already exists.");
+        snprintf(response->message, MAX_MESSAGE, "Registration failed. Username already exists.");
         return;
     }
 
-    generate_salt(request->username, request->from_account, salt, sizeof(salt));
+    new_account = get_next_account_id();
+
+    if (!valid_account_number(new_account))
+    {
+        pthread_mutex_unlock(&users_auth_mutex);
+        response->success = 0;
+        snprintf(response->message, MAX_MESSAGE, "Registration failed. No available account numbers.");
+        return;
+    }
+
+    generate_salt(request->username, new_account, salt, sizeof(salt));
     snprintf(salted_password, sizeof(salted_password), "%s%s", salt, request->password);
     sha256_hex(salted_password, hash);
 
@@ -645,22 +673,27 @@ static void handle_register_user(const BankRequest *request, BankResponse *respo
         return;
     }
 
-    fprintf(file, "%s:%s:%s:%d\n", request->username, salt, hash, request->from_account);
+    fprintf(file, "%s:%s:%s:%d\n", request->username, salt, hash, new_account);
     fclose(file);
 
-    if (!write_balance(request->from_account, 0.0))
+    lock_account(new_account);
+
+    if (!write_balance(new_account, 0.0))
     {
+        unlock_account(new_account);
         pthread_mutex_unlock(&users_auth_mutex);
         response->success = 0;
         snprintf(response->message, MAX_MESSAGE, "User was added, but account file could not be created.");
         return;
     }
 
+    unlock_account(new_account);
     pthread_mutex_unlock(&users_auth_mutex);
 
     response->success = 1;
     response->balance = 0.0;
-    snprintf(response->message, MAX_MESSAGE, "User %s registered for account %d.", request->username, request->from_account);
+    response->account_id = new_account;
+    snprintf(response->message, MAX_MESSAGE, "User %s registered. Assigned account ID: %d.", request->username, new_account);
 }
 
 static int authenticate_user(const BankRequest *request, int *owned_account, BankResponse *response)
@@ -992,6 +1025,7 @@ static void build_response(const BankRequest *request, BankResponse *response)
 
     response->success = 0;
     response->balance = 0.0;
+    response->account_id = -1;
     memset(response->message, 0, MAX_MESSAGE);
 
     if (strcmp(request->operation, "Register") == 0)
@@ -1002,6 +1036,15 @@ static void build_response(const BankRequest *request, BankResponse *response)
 
     if (!authenticate_user(request, &owned_account, response))
     {
+        return;
+    }
+
+    response->account_id = owned_account;
+
+    if (strcmp(request->operation, "Login") == 0)
+    {
+        response->success = 1;
+        snprintf(response->message, MAX_MESSAGE, "Login successful. Account ID: %d.", owned_account);
         return;
     }
 

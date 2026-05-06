@@ -27,6 +27,7 @@ typedef struct
     int success;
     char message[MAX_MESSAGE];
     double balance;
+    int account_id;
 } BankResponse;
 
 #endif

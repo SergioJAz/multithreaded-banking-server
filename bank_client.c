@@ -171,6 +171,7 @@ int main()
     char private_fifo[MAX_FIFO_NAME];
     int choice;
     int running = 1;
+    int account_id = -1;
 
     snprintf(private_fifo, MAX_FIFO_NAME, "/tmp/smbs_client_%d_fifo", getpid());
 
@@ -188,6 +189,33 @@ int main()
 
     printf("Password: ");
     read_password(password, sizeof(password));
+
+    BankRequest login_request;
+    BankResponse login_response;
+
+    memset(&login_request, 0, sizeof(BankRequest));
+    memset(&login_response, 0, sizeof(BankResponse));
+
+    strncpy(login_request.username, username, MAX_USERNAME - 1);
+    strncpy(login_request.password, password, MAX_PASSWORD - 1);
+    strncpy(login_request.operation, "Login", MAX_OPERATION - 1);
+    strncpy(login_request.private_fifo, private_fifo, MAX_FIFO_NAME - 1);
+
+    if (!send_request_and_get_response(&login_request, &login_response))
+    {
+        unlink(private_fifo);
+        return 1;
+    }
+
+    if (!login_response.success)
+    {
+        printf("Login failed: %s\n", login_response.message);
+        unlink(private_fifo);
+        return 1;
+    }
+
+    account_id = login_response.account_id;
+    printf("Login successful. Your account ID is %d.\n", account_id);
 
     while (running)
     {
@@ -238,10 +266,30 @@ int main()
         }
         else if (choice == 5)
         {
+            char new_username[MAX_USERNAME];
+            char new_password[MAX_PASSWORD];
+
             strncpy(request.operation, "Register", MAX_OPERATION - 1);
 
-            printf("New account number: ");
-            request.from_account = read_int_choice();
+            printf("New username: ");
+            if (scanf("%49s", new_username) != 1)
+            {
+                clear_input_buffer();
+                printf("Invalid username.\n");
+                continue;
+            }
+            clear_input_buffer();
+
+            printf("New password: ");
+            read_password(new_password, sizeof(new_password));
+
+            request.from_account = -1;
+
+            strncpy(request.username, new_username, MAX_USERNAME - 1);
+            request.username[MAX_USERNAME - 1] = '\0';
+
+            strncpy(request.password, new_password, MAX_PASSWORD - 1);
+            request.password[MAX_PASSWORD - 1] = '\0';
         }
         else if (choice == 6)
         {
@@ -264,6 +312,12 @@ int main()
         printf("\nServer Response:\n");
         printf("Success: %d\n", response.success);
         printf("Message: %s\n", response.message);
+
+        if (response.account_id >= 0)
+        {
+            printf("Account ID: %d\n", response.account_id);
+        }
+
         printf("Balance: %.2f\n", response.balance);
     }
 
