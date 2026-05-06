@@ -18,6 +18,20 @@ bob / bob123 / account 2
 
 alice / alice123 / account 3
 
+kal / kal / account 4
+
+# How to run new code:
+
+In terminal on linux:
+ 
+make clean
+
+make
+
+./bank_server in terminal
+
+./bank_client in another terminal
+
 # Steps to follow:
 
 ~~Step 1: Server and client talk through FIFOs.~~ Done
