@@ -12,7 +12,7 @@ touch bank_common.h bank_server.c bank_client.c Makefile
 # Default accounts to Use:
 sergio / sergio123 / account 0
 
-pryian / pryian123 / account 1
+priyan / priyan123 / account 1
 
 bob / bob123 / account 2
 
@@ -32,5 +32,5 @@ alice / alice123 / account 3
 
 ~~Step 6: Add authentication.~~ Done
 
-Step 7: Add encryption.
+~~Step 7: Add encryption.~~ Done
 

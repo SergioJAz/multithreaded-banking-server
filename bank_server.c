@@ -19,6 +19,8 @@
 #define SALT_SIZE 64
 #define HASH_SIZE 65
 #define AUTH_LINE_SIZE 256
+#define ENCRYPTED_FILE_PREFIX "SMBSX1:"
+#define ENCRYPTION_KEY "CSIS221_SMBS_MASTER_KEY"
 
 static pthread_mutex_t account_mutexes[MAX_ACCOUNTS];
 static pthread_mutex_t users_auth_mutex = PTHREAD_MUTEX_INITIALIZER;
@@ -325,7 +327,7 @@ static int ensure_users_auth_file(void)
         {"sergio", "salt_sergio_01", "sergio123", "0"},
         {"alice", "salt_alice_04", "alice123", "3"},
         {"bob", "salt_bob_03", "bob123", "2"},
-        {"priyan", "salt_priyan_02", "priyan123", "1"}};
+        {"priyan123", "salt_priyan123_02", "priyan123", "1"}};
 
     fprintf(file, "# Format: username:salt:sha256(salt + password):account_id\n");
 
@@ -342,7 +344,7 @@ static int ensure_users_auth_file(void)
     fclose(file);
 
     printf("Created default users.auth file.\n");
-    printf("Default users: sergio/sergio123 account 0, priyan/priyan123 account 1, bob/bob123 account 2, alice/alice123 account 3.\n");
+    printf("Default users: sergio/sergio123 account 0, priyan123/priyan123 account 1, bob/bob123 account 2, alice/alice123 account 3.\n");
 
     return 1;
 }
@@ -364,10 +366,105 @@ static int build_account_path(int account_number, char *path, size_t path_size)
     return 1;
 }
 
+
+static void xor_crypt_buffer(char *buffer, size_t length)
+{
+    const char *key = ENCRYPTION_KEY;
+    size_t key_length = strlen(key);
+
+    if (key_length == 0)
+    {
+        return;
+    }
+
+    for (size_t i = 0; i < length; i++)
+    {
+        buffer[i] = (char)(buffer[i] ^ key[i % key_length]);
+    }
+}
+
+static int write_hex_byte(FILE *file, unsigned char value)
+{
+    return fprintf(file, "%02x", value) == 2;
+}
+
+static int hex_value(char ch)
+{
+    if (ch >= '0' && ch <= '9')
+    {
+        return ch - '0';
+    }
+
+    if (ch >= 'a' && ch <= 'f')
+    {
+        return ch - 'a' + 10;
+    }
+
+    if (ch >= 'A' && ch <= 'F')
+    {
+        return ch - 'A' + 10;
+    }
+
+    return -1;
+}
+
+static int decode_hex_string(const char *hex, char *output, size_t output_size, size_t *output_length)
+{
+    size_t hex_length = strlen(hex);
+
+    if (hex_length % 2 != 0 || (hex_length / 2) >= output_size)
+    {
+        return 0;
+    }
+
+    *output_length = hex_length / 2;
+
+    for (size_t i = 0; i < *output_length; i++)
+    {
+        int high = hex_value(hex[i * 2]);
+        int low = hex_value(hex[i * 2 + 1]);
+
+        if (high < 0 || low < 0)
+        {
+            return 0;
+        }
+
+        output[i] = (char)((high << 4) | low);
+    }
+
+    output[*output_length] = '\0';
+    return 1;
+}
+
+static int decrypt_balance_text(const char *file_text, double *balance)
+{
+    const char *encrypted_hex;
+    char encrypted_bytes[128];
+    size_t encrypted_length;
+
+    if (strncmp(file_text, ENCRYPTED_FILE_PREFIX, strlen(ENCRYPTED_FILE_PREFIX)) != 0)
+    {
+        return sscanf(file_text, "%lf", balance) == 1;
+    }
+
+    encrypted_hex = file_text + strlen(ENCRYPTED_FILE_PREFIX);
+
+    if (!decode_hex_string(encrypted_hex, encrypted_bytes, sizeof(encrypted_bytes), &encrypted_length))
+    {
+        return 0;
+    }
+
+    xor_crypt_buffer(encrypted_bytes, encrypted_length);
+    encrypted_bytes[encrypted_length] = '\0';
+
+    return sscanf(encrypted_bytes, "%lf", balance) == 1;
+}
+
 static int read_balance(int account_number, double *balance)
 {
     char path[ACCOUNT_PATH_SIZE];
     FILE *file;
+    char file_text[128];
 
     if (!build_account_path(account_number, path, sizeof(path)))
     {
@@ -388,12 +485,21 @@ static int read_balance(int account_number, double *balance)
         return 0;
     }
 
-    if (fscanf(file, "%lf", balance) != 1)
+    if (fgets(file_text, sizeof(file_text), file) == NULL)
+    {
+        *balance = 0.0;
+        fclose(file);
+        return 1;
+    }
+
+    fclose(file);
+    file_text[strcspn(file_text, "\r\n")] = '\0';
+
+    if (!decrypt_balance_text(file_text, balance))
     {
         *balance = 0.0;
     }
 
-    fclose(file);
     return 1;
 }
 
@@ -401,11 +507,17 @@ static int write_balance(int account_number, double balance)
 {
     char path[ACCOUNT_PATH_SIZE];
     FILE *file;
+    char plain_text[64];
+    size_t plain_length;
 
     if (!build_account_path(account_number, path, sizeof(path)))
     {
         return 0;
     }
+
+    snprintf(plain_text, sizeof(plain_text), "%.2f", balance);
+    plain_length = strlen(plain_text);
+    xor_crypt_buffer(plain_text, plain_length);
 
     file = fopen(path, "w");
 
@@ -415,7 +527,18 @@ static int write_balance(int account_number, double balance)
         return 0;
     }
 
-    fprintf(file, "%.2f\n", balance);
+    fprintf(file, "%s", ENCRYPTED_FILE_PREFIX);
+
+    for (size_t i = 0; i < plain_length; i++)
+    {
+        if (!write_hex_byte(file, (unsigned char)plain_text[i]))
+        {
+            fclose(file);
+            return 0;
+        }
+    }
+
+    fprintf(file, "\n");
     fclose(file);
     return 1;
 }
