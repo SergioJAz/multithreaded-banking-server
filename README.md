@@ -9,6 +9,15 @@ mkdir data auth
 
 touch bank_common.h bank_server.c bank_client.c Makefile
 
+# Default accounts to Use:
+sergio / sergio123 / account 0
+
+pryian / pryian123 / account 1
+
+bob / bob123 / account 2
+
+alice / alice123 / account 3
+
 # Steps to follow:
 
 ~~Step 1: Server and client talk through FIFOs.~~ Done
@@ -19,8 +28,9 @@ touch bank_common.h bank_server.c bank_client.c Makefile
 
 ~~Step 4: Add mutexes.~~ Done
 
-Step 5: Add transfers with ordered locking.
+~~Step 5: Add transfers with ordered locking.~~ Done
 
-Step 6: Add authentication.
+~~Step 6: Add authentication.~~ Done
 
 Step 7: Add encryption.
+

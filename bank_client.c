@@ -74,7 +74,8 @@ int main()
     printf("2) Deposit\n");
     printf("3) Withdraw\n");
     printf("4) Transfer\n");
-    printf("5) Quit\n");
+    printf("5) Register new user\n");
+    printf("6) Quit\n");
     printf("Enter your choice: ");
 
     choice = read_int_choice();
@@ -87,14 +88,14 @@ int main()
     {
         strncpy(request.operation, "BalanceCheck", MAX_OPERATION - 1);
 
-        printf("Account number: ");
+        printf("Your account number: ");
         request.from_account = read_int_choice();
     }
     else if (choice == 2)
     {
         strncpy(request.operation, "Deposit", MAX_OPERATION - 1);
 
-        printf("Account number: ");
+        printf("Your account number: ");
         request.from_account = read_int_choice();
 
         printf("Amount to deposit: ");
@@ -104,7 +105,7 @@ int main()
     {
         strncpy(request.operation, "Withdraw", MAX_OPERATION - 1);
 
-        printf("Account number: ");
+        printf("Your account number: ");
         request.from_account = read_int_choice();
 
         printf("Amount to withdraw: ");
@@ -114,7 +115,7 @@ int main()
     {
         strncpy(request.operation, "Transfer", MAX_OPERATION - 1);
 
-        printf("From account number: ");
+        printf("Your account number to transfer from: ");
         request.from_account = read_int_choice();
 
         printf("To account number: ");
@@ -124,6 +125,13 @@ int main()
         request.amount = read_amount();
     }
     else if (choice == 5)
+    {
+        strncpy(request.operation, "Register", MAX_OPERATION - 1);
+
+        printf("New account number: ");
+        request.from_account = read_int_choice();
+    }
+    else if (choice == 6)
     {
         printf("GoodBye\n");
         unlink(request.private_fifo);
