@@ -326,7 +326,7 @@ static int ensure_users_auth_file(void)
     fprintf(file, "# Format: username:salt:sha256(salt + password):account_id\n");
     fclose(file);
 
-    printf("Created empty users.auth file. Register users with the client menu.\n");
+    printf("Created empty users.auth file. Register users from the client start menu.\n");
     return 1;
 }
 
@@ -574,7 +574,7 @@ static int get_next_account_id(void)
 {
     FILE *file = fopen(USERS_AUTH_FILE, "r");
     char line[AUTH_LINE_SIZE];
-    int highest_account = -1;
+    int highest_account = 0;
 
     if (file == NULL)
     {
@@ -620,7 +620,6 @@ static int get_next_account_id(void)
     }
 
     fclose(file);
-
     return highest_account + 1;
 }
 
@@ -676,24 +675,20 @@ static void handle_register_user(const BankRequest *request, BankResponse *respo
     fprintf(file, "%s:%s:%s:%d\n", request->username, salt, hash, new_account);
     fclose(file);
 
-    lock_account(new_account);
-
     if (!write_balance(new_account, 0.0))
     {
-        unlock_account(new_account);
         pthread_mutex_unlock(&users_auth_mutex);
         response->success = 0;
         snprintf(response->message, MAX_MESSAGE, "User was added, but account file could not be created.");
         return;
     }
 
-    unlock_account(new_account);
     pthread_mutex_unlock(&users_auth_mutex);
 
     response->success = 1;
     response->balance = 0.0;
     response->account_id = new_account;
-    snprintf(response->message, MAX_MESSAGE, "User %s registered. Assigned account ID: %d.", request->username, new_account);
+    snprintf(response->message, MAX_MESSAGE, "User %s registered for account %d.", request->username, new_account);
 }
 
 static int authenticate_user(const BankRequest *request, int *owned_account, BankResponse *response)

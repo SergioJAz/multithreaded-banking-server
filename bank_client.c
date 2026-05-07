@@ -111,15 +111,23 @@ static void read_password(char *password, int max_len)
     printf("\n");
 }
 
-static void print_menu()
+static void print_start_menu()
+{
+    printf("\nChoose an option:\n");
+    printf("1) Login\n");
+    printf("2) Register new user\n");
+    printf("3) Quit\n");
+    printf("Enter your choice: ");
+}
+
+static void print_account_menu()
 {
     printf("\nChoose an operation:\n");
     printf("1) BalanceCheck\n");
     printf("2) Deposit\n");
     printf("3) Withdraw\n");
     printf("4) Transfer\n");
-    printf("5) Register new user\n");
-    printf("6) Quit\n");
+    printf("5) Logout\n");
     printf("Enter your choice: ");
 }
 
@@ -164,63 +172,96 @@ static int send_request_and_get_response(BankRequest *request, BankResponse *res
     return 1;
 }
 
-int main()
+static int register_new_user(const char *private_fifo)
 {
-    char username[MAX_USERNAME];
-    char password[MAX_PASSWORD];
-    char private_fifo[MAX_FIFO_NAME];
-    int choice;
-    int running = 1;
-    int account_id = -1;
+    BankRequest request;
+    BankResponse response;
 
-    snprintf(private_fifo, MAX_FIFO_NAME, "/tmp/smbs_client_%d_fifo", getpid());
+    memset(&request, 0, sizeof(BankRequest));
+    memset(&response, 0, sizeof(BankResponse));
 
-    unlink(private_fifo);
+    strncpy(request.operation, "Register", MAX_OPERATION - 1);
+    strncpy(request.private_fifo, private_fifo, MAX_FIFO_NAME - 1);
 
-    if (mkfifo(private_fifo, 0666) == -1)
+    printf("New username: ");
+    if (scanf("%49s", request.username) != 1)
     {
-        perror("Failed to create private FIFO");
-        exit(1);
+        clear_input_buffer();
+        printf("Invalid username.\n");
+        return 0;
+    }
+    clear_input_buffer();
+
+    printf("New password: ");
+    read_password(request.password, sizeof(request.password));
+
+    if (!send_request_and_get_response(&request, &response))
+    {
+        return 0;
     }
 
+    printf("\nServer Response:\n");
+    printf("Success: %d\n", response.success);
+    printf("Message: %s\n", response.message);
+
+    if (response.account_id >= 0)
+    {
+        printf("Account ID: %d\n", response.account_id);
+    }
+
+    return response.success;
+}
+
+static int login_user(const char *private_fifo, char *username, char *password, int *account_id)
+{
+    BankRequest request;
+    BankResponse response;
+
+    memset(&request, 0, sizeof(BankRequest));
+    memset(&response, 0, sizeof(BankResponse));
+
     printf("Username: ");
-    scanf("%49s", username);
+    if (scanf("%49s", username) != 1)
+    {
+        clear_input_buffer();
+        printf("Invalid username.\n");
+        return 0;
+    }
     clear_input_buffer();
 
     printf("Password: ");
-    read_password(password, sizeof(password));
+    read_password(password, MAX_PASSWORD);
 
-    BankRequest login_request;
-    BankResponse login_response;
+    strncpy(request.username, username, MAX_USERNAME - 1);
+    strncpy(request.password, password, MAX_PASSWORD - 1);
+    strncpy(request.operation, "Login", MAX_OPERATION - 1);
+    strncpy(request.private_fifo, private_fifo, MAX_FIFO_NAME - 1);
 
-    memset(&login_request, 0, sizeof(BankRequest));
-    memset(&login_response, 0, sizeof(BankResponse));
-
-    strncpy(login_request.username, username, MAX_USERNAME - 1);
-    strncpy(login_request.password, password, MAX_PASSWORD - 1);
-    strncpy(login_request.operation, "Login", MAX_OPERATION - 1);
-    strncpy(login_request.private_fifo, private_fifo, MAX_FIFO_NAME - 1);
-
-    if (!send_request_and_get_response(&login_request, &login_response))
+    if (!send_request_and_get_response(&request, &response))
     {
-        unlink(private_fifo);
-        return 1;
+        return 0;
     }
 
-    if (!login_response.success)
+    if (!response.success)
     {
-        printf("Login failed: %s\n", login_response.message);
-        unlink(private_fifo);
-        return 1;
+        printf("Login failed: %s\n", response.message);
+        return 0;
     }
 
-    account_id = login_response.account_id;
-    printf("Login successful. Your account ID is %d.\n", account_id);
+    *account_id = response.account_id;
+    printf("Login successful. Your account ID is %d.\n", *account_id);
+    return 1;
+}
+
+static void account_loop(const char *private_fifo, const char *username, const char *password, int account_id)
+{
+    int running = 1;
 
     while (running)
     {
         BankRequest request;
         BankResponse response;
+        int choice;
 
         memset(&request, 0, sizeof(BankRequest));
         memset(&response, 0, sizeof(BankResponse));
@@ -229,11 +270,11 @@ int main()
         strncpy(request.password, password, MAX_PASSWORD - 1);
         strncpy(request.private_fifo, private_fifo, MAX_FIFO_NAME - 1);
 
-        request.from_account = 0;
+        request.from_account = account_id;
         request.to_account = 0;
         request.amount = 0.0;
 
-        print_menu();
+        print_account_menu();
         choice = read_int_choice();
 
         if (choice == 1)
@@ -266,34 +307,7 @@ int main()
         }
         else if (choice == 5)
         {
-            char new_username[MAX_USERNAME];
-            char new_password[MAX_PASSWORD];
-
-            strncpy(request.operation, "Register", MAX_OPERATION - 1);
-
-            printf("New username: ");
-            if (scanf("%49s", new_username) != 1)
-            {
-                clear_input_buffer();
-                printf("Invalid username.\n");
-                continue;
-            }
-            clear_input_buffer();
-
-            printf("New password: ");
-            read_password(new_password, sizeof(new_password));
-
-            request.from_account = -1;
-
-            strncpy(request.username, new_username, MAX_USERNAME - 1);
-            request.username[MAX_USERNAME - 1] = '\0';
-
-            strncpy(request.password, new_password, MAX_PASSWORD - 1);
-            request.password[MAX_PASSWORD - 1] = '\0';
-        }
-        else if (choice == 6)
-        {
-            printf("GoodBye\n");
+            printf("Logged out.\n");
             running = 0;
             continue;
         }
@@ -305,8 +319,7 @@ int main()
 
         if (!send_request_and_get_response(&request, &response))
         {
-            unlink(private_fifo);
-            return 1;
+            return;
         }
 
         printf("\nServer Response:\n");
@@ -320,8 +333,55 @@ int main()
 
         printf("Balance: %.2f\n", response.balance);
     }
+}
+
+int main()
+{
+    char username[MAX_USERNAME];
+    char password[MAX_PASSWORD];
+    char private_fifo[MAX_FIFO_NAME];
+    int running = 1;
+
+    snprintf(private_fifo, MAX_FIFO_NAME, "/tmp/smbs_client_%d_fifo", getpid());
 
     unlink(private_fifo);
 
+    if (mkfifo(private_fifo, 0666) == -1)
+    {
+        perror("Failed to create private FIFO");
+        exit(1);
+    }
+
+    while (running)
+    {
+        int choice;
+        int account_id = -1;
+
+        print_start_menu();
+        choice = read_int_choice();
+
+        if (choice == 1)
+        {
+            if (login_user(private_fifo, username, password, &account_id))
+            {
+                account_loop(private_fifo, username, password, account_id);
+            }
+        }
+        else if (choice == 2)
+        {
+            register_new_user(private_fifo);
+        }
+        else if (choice == 3)
+        {
+            printf("GoodBye\n");
+            running = 0;
+        }
+        else
+        {
+            printf("Invalid choice.\n");
+        }
+    }
+
+    unlink(private_fifo);
     return 0;
 }
