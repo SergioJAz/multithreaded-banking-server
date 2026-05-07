@@ -8,6 +8,7 @@
 
 #include "bank_common.h"
 
+/* Removes leftover keyboard input so the next menu read starts cleanly. */
 static void clear_input_buffer()
 {
     int ch;
@@ -17,6 +18,7 @@ static void clear_input_buffer()
     }
 }
 
+/* Reads an integer menu choice and returns -1 when the input is not valid. */
 static int read_int_choice()
 {
     int choice;
@@ -31,6 +33,7 @@ static int read_int_choice()
     return choice;
 }
 
+/* Reads a money amount and returns -1.0 when the input is not valid. */
 static double read_amount()
 {
     double amount;
@@ -45,6 +48,7 @@ static double read_amount()
     return amount;
 }
 
+/* Reads a password from the terminal while showing stars instead of the real characters. */
 static void read_password(char *password, int max_len)
 {
     struct termios oldt;
@@ -111,6 +115,7 @@ static void read_password(char *password, int max_len)
     printf("\n");
 }
 
+/* Displays the first menu where the user can log in, register, or quit. */
 static void print_start_menu()
 {
     printf("\nChoose an option:\n");
@@ -120,6 +125,7 @@ static void print_start_menu()
     printf("Enter your choice: ");
 }
 
+/* Displays the logged-in account menu for balance, deposit, withdrawal, transfer, and logout. */
 static void print_account_menu()
 {
     printf("\nChoose an operation:\n");
@@ -131,6 +137,7 @@ static void print_account_menu()
     printf("Enter your choice: ");
 }
 
+/* Sends one request to the server public FIFO and waits for the reply on this client private FIFO. */
 static int send_request_and_get_response(BankRequest *request, BankResponse *response)
 {
     int public_fd;
@@ -172,6 +179,7 @@ static int send_request_and_get_response(BankRequest *request, BankResponse *res
     return 1;
 }
 
+/* Collects a new username and password, sends a Register request, and prints the server response. */
 static int register_new_user(const char *private_fifo)
 {
     BankRequest request;
@@ -212,6 +220,7 @@ static int register_new_user(const char *private_fifo)
     return response.success;
 }
 
+/* Collects login details, sends a Login request, and stores the account ID returned by the server. */
 static int login_user(const char *private_fifo, char *username, char *password, int *account_id)
 {
     BankRequest request;
@@ -253,6 +262,7 @@ static int login_user(const char *private_fifo, char *username, char *password, 
     return 1;
 }
 
+/* Keeps the user logged in so they can make multiple bank requests without retyping credentials. */
 static void account_loop(const char *private_fifo, const char *username, const char *password, int account_id)
 {
     int running = 1;
@@ -335,6 +345,7 @@ static void account_loop(const char *private_fifo, const char *username, const c
     }
 }
 
+/* Creates the private FIFO, runs the main client menu, and removes the FIFO before exiting. */
 int main()
 {
     char username[MAX_USERNAME];

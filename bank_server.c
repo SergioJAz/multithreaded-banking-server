@@ -53,41 +53,49 @@ static const uint32_t k[64] = {
     0x748f82ee, 0x78a5636f, 0x84c87814, 0x8cc70208,
     0x90befffa, 0xa4506ceb, 0xbef9a3f7, 0xc67178f2};
 
+/* Rotates a 32-bit value to the right. This helper is used by the SHA-256 algorithm. */
 static uint32_t rotr(uint32_t a, uint32_t b)
 {
     return (((a) >> (b)) | ((a) << (32 - (b))));
 }
 
+/* Implements the SHA-256 choose operation, which selects bits from two values based on a third value. */
 static uint32_t choose(uint32_t e, uint32_t f, uint32_t g)
 {
     return (e & f) ^ (~e & g);
 }
 
+/* Implements the SHA-256 majority operation, which keeps the bit value shared by most inputs. */
 static uint32_t majority(uint32_t a, uint32_t b, uint32_t c)
 {
     return (a & b) ^ (a & c) ^ (b & c);
 }
 
+/* Computes one of the small SHA-256 sigma functions used while preparing message words. */
 static uint32_t sig0(uint32_t x)
 {
     return rotr(x, 7) ^ rotr(x, 18) ^ (x >> 3);
 }
 
+/* Computes the second small SHA-256 sigma function used while preparing message words. */
 static uint32_t sig1(uint32_t x)
 {
     return rotr(x, 17) ^ rotr(x, 19) ^ (x >> 10);
 }
 
+/* Computes one of the large SHA-256 sigma functions used in each compression round. */
 static uint32_t ep0(uint32_t x)
 {
     return rotr(x, 2) ^ rotr(x, 13) ^ rotr(x, 22);
 }
 
+/* Computes the second large SHA-256 sigma function used in each compression round. */
 static uint32_t ep1(uint32_t x)
 {
     return rotr(x, 6) ^ rotr(x, 11) ^ rotr(x, 25);
 }
 
+/* Processes one 512-bit block of input and updates the SHA-256 state values. */
 static void sha256_transform(SHA256_CTX *ctx, const uint8_t data[])
 {
     uint32_t a, b, c, d, e, f, g, h;
@@ -139,6 +147,7 @@ static void sha256_transform(SHA256_CTX *ctx, const uint8_t data[])
     ctx->state[7] += h;
 }
 
+/* Sets up a new SHA-256 context with the starting hash constants. */
 static void sha256_init(SHA256_CTX *ctx)
 {
     ctx->datalen = 0;
@@ -153,6 +162,7 @@ static void sha256_init(SHA256_CTX *ctx)
     ctx->state[7] = 0x5be0cd19;
 }
 
+/* Adds input bytes into the SHA-256 context and transforms full 64-byte blocks. */
 static void sha256_update(SHA256_CTX *ctx, const uint8_t data[], size_t len)
 {
     for (size_t i = 0; i < len; i++)
@@ -169,6 +179,7 @@ static void sha256_update(SHA256_CTX *ctx, const uint8_t data[], size_t len)
     }
 }
 
+/* Pads the final SHA-256 block, finishes the hash, and writes the 32-byte result. */
 static void sha256_final(SHA256_CTX *ctx, uint8_t hash[])
 {
     uint32_t i = ctx->datalen;
@@ -216,6 +227,7 @@ static void sha256_final(SHA256_CTX *ctx, uint8_t hash[])
     }
 }
 
+/* Hashes a string with SHA-256 and converts the result into a 64-character hex string. */
 static void sha256_hex(const char *input, char output[HASH_SIZE])
 {
     uint8_t hash[32];
@@ -235,21 +247,25 @@ static void sha256_hex(const char *input, char output[HASH_SIZE])
 
 /* ---------------- ACCOUNT LOCKING ---------------- */
 
+/* Checks that an account number is inside the valid mutex and file range. */
 static int valid_account_number(int account_number)
 {
     return account_number >= 0 && account_number < MAX_ACCOUNTS;
 }
 
+/* Locks the mutex for one account so only one thread can use that account file at a time. */
 static void lock_account(int account_number)
 {
     pthread_mutex_lock(&account_mutexes[account_number]);
 }
 
+/* Unlocks the mutex for one account after the thread is done reading or writing it. */
 static void unlock_account(int account_number)
 {
     pthread_mutex_unlock(&account_mutexes[account_number]);
 }
 
+/* Locks two account mutexes in lower-account-first order to prevent transfer deadlocks. */
 static void lock_two_accounts_ordered(int first_account, int second_account)
 {
     if (first_account < second_account)
@@ -264,6 +280,7 @@ static void lock_two_accounts_ordered(int first_account, int second_account)
     }
 }
 
+/* Unlocks two account mutexes in the reverse order after a transfer is complete. */
 static void unlock_two_accounts_ordered(int first_account, int second_account)
 {
     if (first_account < second_account)
@@ -278,6 +295,7 @@ static void unlock_two_accounts_ordered(int first_account, int second_account)
     }
 }
 
+/* Creates one mutex for each possible account so account operations can be synchronized. */
 static int initialize_account_mutexes(void)
 {
     for (int i = 0; i < MAX_ACCOUNTS; i++)
@@ -294,6 +312,7 @@ static int initialize_account_mutexes(void)
 
 /* ---------------- FILE SETUP ---------------- */
 
+/* Makes sure the data folder exists before account balance files are read or written. */
 static int ensure_data_directory(void)
 {
     if (mkdir(DATA_DIR, 0777) == -1 && errno != EEXIST)
@@ -305,6 +324,7 @@ static int ensure_data_directory(void)
     return 1;
 }
 
+/* Makes sure users.auth exists, creating an empty file when the server starts for the first time. */
 static int ensure_users_auth_file(void)
 {
     FILE *file = fopen(USERS_AUTH_FILE, "r");
@@ -330,6 +350,7 @@ static int ensure_users_auth_file(void)
     return 1;
 }
 
+/* Builds the filename for one account balance file and checks that the path fits safely. */
 static int build_account_path(int account_number, char *path, size_t path_size)
 {
     if (!valid_account_number(account_number))
@@ -348,6 +369,7 @@ static int build_account_path(int account_number, char *path, size_t path_size)
 }
 
 
+/* Applies XOR encryption or decryption to a buffer using the server master key. */
 static void xor_crypt_buffer(char *buffer, size_t length)
 {
     const char *key = ENCRYPTION_KEY;
@@ -364,11 +386,13 @@ static void xor_crypt_buffer(char *buffer, size_t length)
     }
 }
 
+/* Writes one encrypted byte as two hex characters so encrypted files stay text-readable. */
 static int write_hex_byte(FILE *file, unsigned char value)
 {
     return fprintf(file, "%02x", value) == 2;
 }
 
+/* Converts one hex character into its numeric value for decrypting account files. */
 static int hex_value(char ch)
 {
     if (ch >= '0' && ch <= '9')
@@ -389,6 +413,7 @@ static int hex_value(char ch)
     return -1;
 }
 
+/* Converts a full hex string back into encrypted bytes before decrypting the balance. */
 static int decode_hex_string(const char *hex, char *output, size_t output_size, size_t *output_length)
 {
     size_t hex_length = strlen(hex);
@@ -417,6 +442,7 @@ static int decode_hex_string(const char *hex, char *output, size_t output_size, 
     return 1;
 }
 
+/* Decrypts an encrypted balance line, while still accepting old plain-text balance files. */
 static int decrypt_balance_text(const char *file_text, double *balance)
 {
     const char *encrypted_hex;
@@ -441,6 +467,7 @@ static int decrypt_balance_text(const char *file_text, double *balance)
     return sscanf(encrypted_bytes, "%lf", balance) == 1;
 }
 
+/* Reads an account balance from disk, decrypts it in memory, and returns the numeric value. */
 static int read_balance(int account_number, double *balance)
 {
     char path[ACCOUNT_PATH_SIZE];
@@ -484,6 +511,7 @@ static int read_balance(int account_number, double *balance)
     return 1;
 }
 
+/* Encrypts a balance in memory and writes only the encrypted version back to disk. */
 static int write_balance(int account_number, double balance)
 {
     char path[ACCOUNT_PATH_SIZE];
@@ -526,11 +554,13 @@ static int write_balance(int account_number, double balance)
 
 /* ---------------- AUTHENTICATION ---------------- */
 
+/* Creates the per-user salt used before hashing the password. */
 static void generate_salt(const char *username, int account_number, char *salt, size_t salt_size)
 {
     snprintf(salt, salt_size, "salt_%s_%02d", username, account_number + 1);
 }
 
+/* Searches users.auth to see whether a username is already registered. */
 static int username_exists(const char *new_username)
 {
     FILE *file = fopen(USERS_AUTH_FILE, "r");
@@ -570,6 +600,7 @@ static int username_exists(const char *new_username)
     return 0;
 }
 
+/* Finds the highest account ID in users.auth and returns the next available account number. */
 static int get_next_account_id(void)
 {
     FILE *file = fopen(USERS_AUTH_FILE, "r");
@@ -623,6 +654,7 @@ static int get_next_account_id(void)
     return highest_account + 1;
 }
 
+/* Registers a new user, hashes the salted password, assigns an account ID, and creates the account file. */
 static void handle_register_user(const BankRequest *request, BankResponse *response)
 {
     char salt[SALT_SIZE];
@@ -691,6 +723,7 @@ static void handle_register_user(const BankRequest *request, BankResponse *respo
     snprintf(response->message, MAX_MESSAGE, "User %s registered for account %d.", request->username, new_account);
 }
 
+/* Verifies the username and password against users.auth and returns the account owned by that user. */
 static int authenticate_user(const BankRequest *request, int *owned_account, BankResponse *response)
 {
     pthread_mutex_lock(&users_auth_mutex);
@@ -771,6 +804,7 @@ static int authenticate_user(const BankRequest *request, int *owned_account, Ban
     return 0;
 }
 
+/* Confirms that the authenticated user is only trying to access their own account. */
 static int check_account_ownership(const BankRequest *request, int owned_account, BankResponse *response)
 {
     if (strcmp(request->operation, "BalanceCheck") == 0 ||
@@ -793,6 +827,7 @@ static int check_account_ownership(const BankRequest *request, int owned_account
 
 /* ---------------- BANK OPERATIONS ---------------- */
 
+/* Handles a balance request by locking the account, reading the encrypted file, and returning the balance. */
 static void handle_balance_check(const BankRequest *request, BankResponse *response)
 {
     double balance;
@@ -824,6 +859,7 @@ static void handle_balance_check(const BankRequest *request, BankResponse *respo
              "Account %d balance is %.2f.", request->from_account, balance);
 }
 
+/* Handles a deposit by locking the account, updating the balance, and saving it encrypted. */
 static void handle_deposit(const BankRequest *request, BankResponse *response)
 {
     double balance;
@@ -875,6 +911,7 @@ static void handle_deposit(const BankRequest *request, BankResponse *response)
              request->amount, request->from_account, balance);
 }
 
+/* Handles a withdrawal atomically, denying it if the balance would become negative. */
 static void handle_withdraw(const BankRequest *request, BankResponse *response)
 {
     double balance;
@@ -937,6 +974,7 @@ static void handle_withdraw(const BankRequest *request, BankResponse *response)
              request->amount, request->from_account, balance);
 }
 
+/* Handles a transfer by locking both accounts in safe order and updating both balances together. */
 static void handle_transfer(const BankRequest *request, BankResponse *response)
 {
     double from_balance;
@@ -1013,6 +1051,7 @@ static void handle_transfer(const BankRequest *request, BankResponse *response)
              request->from_account, from_balance);
 }
 
+/* Routes a client request through registration, login, authentication, and the requested bank operation. */
 static void build_response(const BankRequest *request, BankResponse *response)
 {
     BankRequest authenticated_request;
@@ -1078,6 +1117,7 @@ static void build_response(const BankRequest *request, BankResponse *response)
 
 /* ---------------- THREAD AND SERVER LOOP ---------------- */
 
+/* Runs one client request in its own thread and sends the response back through the private FIFO. */
 static void *client_thread(void *arg)
 {
     BankRequest request = *(BankRequest *)arg;
@@ -1103,6 +1143,7 @@ static void *client_thread(void *arg)
     return NULL;
 }
 
+/* Starts the server, creates the public FIFO, receives requests, and spawns worker threads forever. */
 int main(void)
 {
     int public_fd;
