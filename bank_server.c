@@ -20,7 +20,7 @@
 #define HASH_SIZE 65
 #define AUTH_LINE_SIZE 256
 #define ENCRYPTED_FILE_PREFIX "SMBSX1:"
-#define ENCRYPTION_KEY "CSIS221_SMBS_MASTER_KEY"
+#define ENCRYPTION_KEY "OS_FINAL_PROJECT"
 
 static pthread_mutex_t account_mutexes[MAX_ACCOUNTS];
 static pthread_mutex_t users_auth_mutex = PTHREAD_MUTEX_INITIALIZER;
@@ -53,7 +53,7 @@ static const uint32_t k[64] = {
     0x748f82ee, 0x78a5636f, 0x84c87814, 0x8cc70208,
     0x90befffa, 0xa4506ceb, 0xbef9a3f7, 0xc67178f2};
 
-/* Rotates a 32-bit value to the right. This helper is used by the SHA-256 algorithm. */
+/* Rotates a 32-bit value to the right. */
 static uint32_t rotr(uint32_t a, uint32_t b)
 {
     return (((a) >> (b)) | ((a) << (32 - (b))));
