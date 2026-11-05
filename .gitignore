@@ -1,0 +1,9 @@
+bank_server
+bank_client
+*.o
+a.out
+.vscode/
+.base-ast/
+# runtime files created by the server
+users.auth
+data/

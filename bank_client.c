@@ -1,3 +1,11 @@
+/*
+ * File: bank_client.c
+ * Author: Sergio Azizi & Priyan Wijeratne
+ * Project: Secure Multi-threaded Banking System
+ * Description: Client program that lets users log in, send banking
+ *              requests to the server, and receive responses through
+ *              a private FIFO.
+ */
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>

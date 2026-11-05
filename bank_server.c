@@ -1,3 +1,10 @@
+/*
+ * File: bank_server.c
+ * Author: Sergio Azizi & Priyan Wijeratne
+ * Project: Secure Multi-threaded Banking System
+ * Description: Server program that handles authentication,
+ *              encrypted account files, and concurrent banking requests.
+ */
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
